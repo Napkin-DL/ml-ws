@@ -1,0 +1,10 @@
+log/
+output/
+tensorboard/
+amazon-reviews-spark-processor-*/
+cache/
+outputs/
+models/
+generated_module/
+notebooks/
+fine-tuned/
