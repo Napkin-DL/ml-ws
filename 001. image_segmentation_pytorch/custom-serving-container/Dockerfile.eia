@@ -1,0 +1,83 @@
+# FROM 763104351884.dkr.ecr.ap-northeast-2.amazonaws.com/tensorflow-inference-eia:2.0.0-cpu
+FROM 763104351884.dkr.ecr.us-east-2.amazonaws.com/tensorflow-inference-eia:2.0.0-cpu
+
+RUN apt-get update && apt-get install -y  --allow-downgrades --allow-change-held-packages --no-install-recommends \
+	build-essential \
+    ca-certificates \
+    cmake \
+    libgomp1 \
+    libibverbs-dev \
+    git \
+    wget \
+    unzip \
+    yasm \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    pkg-config \
+    curl
+	 
+########################
+###  OPENCV INSTALL  ###
+########################
+
+ARG OPENCV_VERSION=3.4.1
+# ARG OPENCV_INSTALL_PATH=/usr/local
+
+## Create install directory
+## Force success as the only reason for a fail is if it exist
+
+# RUN mkdir -p $OPENCV_INSTALL_PATH; exit 0
+
+WORKDIR /
+
+## Single command to reduce image size
+## Build opencv
+RUN wget https://github.com/opencv/opencv/archive/$OPENCV_VERSION.zip \
+    && unzip $OPENCV_VERSION.zip \
+    && mkdir /opencv-$OPENCV_VERSION/cmake_binary \
+    && cd /opencv-$OPENCV_VERSION/cmake_binary \
+    && cmake -DBUILD_TIFF=ON \
+       -DBUILD_opencv_java=OFF \
+       -DBUILD_SHARED_LIBS=OFF \
+       -DWITH_CUDA=ON \
+       # -DENABLE_FAST_MATH=1 \
+       # -DCUDA_FAST_MATH=1 \
+       -DWITH_CUBLAS=1 \
+       -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-9.0 \
+       ##
+       ## Should compile for most card
+       ## 3.5 binary code for devices with compute capability 3.5 and 3.7,
+       ## 5.0 binary code for devices with compute capability 5.0 and 5.2,
+       ## 6.0 binary code for devices with compute capability 6.0 and 6.1,
+       -DCUDA_ARCH_BIN='3.0 3.5 5.0 6.0 6.2' \
+       -DCUDA_ARCH_PTX="" \
+       ##
+       ## AVX in dispatch because not all machines have it
+       -DCPU_DISPATCH=AVX,AVX2 \
+       -DENABLE_PRECOMPILED_HEADERS=OFF \
+       -DWITH_OPENGL=OFF \
+       -DWITH_OPENCL=OFF \
+       -DWITH_QT=OFF \
+       -DWITH_IPP=ON \
+       -DWITH_TBB=ON \
+       -DFORCE_VTK=ON \
+       -DWITH_EIGEN=ON \
+       -DWITH_V4L=ON \
+       -DWITH_XINE=ON \
+       -DWITH_GDAL=ON \
+       -DWITH_1394=OFF \
+       -DWITH_FFMPEG=OFF \
+       -DBUILD_PROTOBUF=OFF \
+       -DBUILD_TESTS=OFF \
+       -DBUILD_PERF_TESTS=OFF \
+       -DCMAKE_BUILD_TYPE=RELEASE \
+       # -DCMAKE_INSTALL_PREFIX=$OPENCV_INSTALL_PATH \
+    .. \
+    ##
+    ## Add variable to enable make to use all cores
+    && export NUMPROC=$(nproc --all) \
+    && make -j$NUMPROC install \
+    ## Remove following lines if you need to move openCv
+    && rm /$OPENCV_VERSION.zip \
+    && rm -r /opencv-$OPENCV_VERSION
