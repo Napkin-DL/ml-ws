@@ -5,6 +5,5 @@ data/
 dataset/
 datasets/
 data-tfrecord/
-model/
 model_result/
-output/
+model/
