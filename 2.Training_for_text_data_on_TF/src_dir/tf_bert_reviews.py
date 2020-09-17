@@ -147,6 +147,8 @@ if __name__ == '__main__':
     parser.add_argument('--num_gpus', 
                         type=int, 
                         default=os.environ['SM_NUM_GPUS'])
+    parser.add_argument('--finetune_checkpoint_path', type=str,
+                        default=None, help='The path to a checkpoint from which to fine-tune.')
     parser.add_argument('--checkpoint_base_path', 
                         type=str, 
                         default='/opt/ml/checkpoints')
@@ -284,7 +286,10 @@ if __name__ == '__main__':
     enable_tensorboard = args.enable_tensorboard
     print('enable_tensorboard {}'.format(enable_tensorboard))       
     enable_checkpointing = args.enable_checkpointing
-    print('enable_checkpointing {}'.format(enable_checkpointing))    
+    print('enable_checkpointing {}'.format(enable_checkpointing)) 
+    
+    finetune_checkpoint_path = args.finetune_checkpoint_path
+    print('finetune_checkpoint_path {}'.format(finetune_checkpoint_path))     
 
     checkpoint_base_path = args.checkpoint_base_path
     print('checkpoint_base_path {}'.format(checkpoint_base_path))
@@ -351,8 +356,12 @@ if __name__ == '__main__':
                 tokenizer = DistilBertTokenizer.from_pretrained('distilbert-base-uncased')
                 config = DistilBertConfig.from_pretrained('distilbert-base-uncased',
                                                           num_labels=len(CLASSES))
-                model = TFDistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased',
-                                                                              config=config)
+                if finetune_checkpoint_path is None:
+                    model = TFDistilBertForSequenceClassification.from_pretrained('distilbert-base-uncased',
+                                                                                  config=config)
+                else:
+                    model = TFDistilBertForSequenceClassification.from_pretrained(finetune_checkpoint_path)
+
                 successful_download = True
                 print('Sucessfully downloaded after {} retries.'.format(retries))
             except:
@@ -441,7 +450,8 @@ if __name__ == '__main__':
                                                      steps_per_epoch=train_steps_per_epoch,
                                                      validation_data=validation_dataset,
                                                      validation_steps=validation_steps,
-                                                     callbacks=callbacks)                                
+                                                     callbacks=callbacks,
+                                                     verbose=1)                                
             print(train_and_validation_history)
         else: # Not running validation
             print('Starting Training (Without Validation)...')
@@ -450,7 +460,8 @@ if __name__ == '__main__':
                                       epochs=epochs,
                                       initial_epoch=initial_epoch_number,
                                       steps_per_epoch=train_steps_per_epoch,
-                                      callbacks=callbacks)                
+                                      callbacks=callbacks,
+                                      verbose=1)                
             print(train_history)
 
         if run_test:
@@ -470,7 +481,8 @@ if __name__ == '__main__':
             print('Starting test...')
             test_history = model.evaluate(test_dataset,
                                           steps=test_steps,
-                                          callbacks=callbacks)
+                                          callbacks=callbacks,
+                                          verbose=1)
                                  
             print('Test history {}'.format(test_history))
             

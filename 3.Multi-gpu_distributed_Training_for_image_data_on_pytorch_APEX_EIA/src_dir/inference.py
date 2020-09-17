@@ -13,9 +13,6 @@ import numpy as np
 import io
 import tarfile
 
-import boto3
-import sagemaker_containers as smc
-
 from PIL import Image
 
 import torch
@@ -62,7 +59,7 @@ def input_fn(request_body, request_content_type='application/x-image'):
 
         transform = transforms.Compose([
             transforms.Grayscale(num_output_channels=3),
-            transforms.Resize((224, 224)),
+            transforms.Resize((128, 128)),
             transforms.ToTensor(),
             transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
         ])

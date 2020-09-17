@@ -140,7 +140,7 @@ def _generate_post_processed_response(array, model):
             output_array[:, output_key_idx] = model.inverse_label_transform(array[:, input_key_idx]
                                                                             .ravel().astype(np.float).astype(np.int))
         elif output_key == "labels":
-            output_array[:, output_key_idx][:] = str(list(model.target_transformer.classes_))
+            output_array[:, output_key_idx][:] = str(list(model.target_transformer.get_classes()))
         elif output_key in input_keys:
             input_key_idx = input_keys.index(output_key)
             output_array[:, output_key_idx] = array[:, input_key_idx].tolist()

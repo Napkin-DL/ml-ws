@@ -101,8 +101,6 @@ def _get_train_data_loader(args, **kwargs):
         transforms.ColorJitter(brightness=0, contrast=0, saturation=0, hue=0),
         transforms.RandomAffine(
             0, translate=None, scale=None, shear=None, resample=False, fillcolor=0),
-#         transforms.ToTensor(),  #Too slow
-#         transforms.Normalize([0.5, 0.5, 0.5], [0.5, 0.5, 0.5])
     ])
     
     dataset = datasets.ImageFolder(root=os.path.join(args.data_dir, 'train'),
@@ -116,10 +114,7 @@ def _get_train_data_loader(args, **kwargs):
 def _get_test_data_loader(args, **kwargs):
     logger.info("Get test data loader")
     transform = transforms.Compose([
-        transforms.Resize((args.width, args.height)),
-#         transforms.ToTensor(),
-#         transforms.Normalize(
-#             (0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        transforms.Resize((args.width, args.height))
     ])
      
     dataset = datasets.ImageFolder(root=os.path.join(args.data_dir, 'val'),
@@ -193,35 +188,23 @@ def train(current_gpu, args):
         while input is not None:
 
             batch_idx += 1
-            
-            if args.prof >= 0 and batch_idx == args.prof:
-                print("Profiling begun at iteration {}".format(batch_idx))
-                torch.cuda.cudart().cudaProfilerStart()
-                
-            if args.prof >= 0: torch.cuda.nvtx.range_push("Body of iteration {}".format(batch_idx))
 
             util.adjust_learning_rate(optimizer, epoch, batch_idx, len(train_loader), args)
 
             # compute output
-            if args.prof >= 0: torch.cuda.nvtx.range_push("forward")
             output = model(input)
-            if args.prof >= 0: torch.cuda.nvtx.range_pop()
             loss = criterion(output, target)
 
             # compute gradient and do SGD step
             optimizer.zero_grad()
             
-            if args.prof >= 0: torch.cuda.nvtx.range_push("backward")
             if args.apex:
                 with amp.scale_loss(loss, optimizer) as scaled_loss:
                     scaled_loss.backward()
             else:
                 loss.backward()
-            if args.prof >= 0: torch.cuda.nvtx.range_pop()
 
-            if args.prof >= 0: torch.cuda.nvtx.range_push("optimizer.step()")
             optimizer.step()
-            if args.prof >= 0: torch.cuda.nvtx.range_pop()
 
             if True or batch_idx % args.log_interval == 0:
                 # Every print_freq iterations, check the loss, accuracy, and speed.
@@ -267,19 +250,8 @@ def train(current_gpu, args):
                     model_history['losses'].append(losses.val)
                     model_history['top1'].append(top1.val)
                     model_history['top5'].append(top5.val)
-                    
-                if args.prof >= 0: torch.cuda.nvtx.range_push("prefetcher.next()")
-                input, target = prefetcher.next()
-                if args.prof >= 0: torch.cuda.nvtx.range_pop()
 
-                # Pop range "Body of iteration {}".format(i)
-                if args.prof >= 0: torch.cuda.nvtx.range_pop()
-                    
-
-                if args.prof >= 0 and batch_idx == args.prof + 10:
-                    print("Profiling ended at iteration {}".format(batch_idx))
-                    torch.cuda.cudart().cudaProfilerStop()
-                    quit()
+            input, target = prefetcher.next()
                
         acc1 = validate(test_loader, model, criterion, epoch, model_history, args)
         
@@ -324,11 +296,6 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
     
         # compute output
         with torch.no_grad():
-#             data = data.contiguous(memory_format=args.memory_format)
-#             target = target.contiguous()
-#             data = data.cuda(non_blocking=True)
-#             target = target.cuda(non_blocking=True)
-
             output = model(input)
             loss = criterion(output, target)
 
