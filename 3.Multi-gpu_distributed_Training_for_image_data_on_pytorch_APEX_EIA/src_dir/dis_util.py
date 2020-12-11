@@ -16,11 +16,24 @@ import torch.nn.functional as F
 import torch.nn.parallel
 import torch.optim as optim
 import torch.utils.data.distributed
+from torch.cuda.amp import autocast
 
-import sagemaker_containers
+# smdist import package
+try:
+    # Import smdist PyTorch Modules
+    import smdistributed.dataparallel.torch.distributed as dp
+    from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
+    # SMP: Import SMP API
+#     import smdistributed.modelparallel.torch as smp 
+
+except ImportError:
+    pass
+#     raise ImportError("Please install smdist.")
+
 
 try:
-    from apex.parallel import DistributedDataParallel as DDP
+    from apex.parallel import DistributedDataParallel as apexDDP
+    import torch.distributed as apex
     from apex.fp16_utils import *
     from apex import amp, optimizers
     from apex.multi_tensor_apply import multi_tensor_applier
@@ -38,112 +51,229 @@ def dist_init(fn, args):
     if args.seed is not None:
         random.seed(args.seed)
         torch.manual_seed(args.seed)
+        np.random.seed(args.seed)
+        torch.cuda.manual_seed_all(args.seed)
         cudnn.deterministic = True
-        warnings.warn('You have chosen to seed training. '
-                      'This will turn on the CUDNN deterministic setting, '
-                      'which can slow down your training considerably! '
-                      'You may see unexpected behavior when restarting '
-                      'from checkpoints.')
+
+
+        if cudnn.deterministic:
+            warnings.warn('You have chosen to seed training. '
+                          'This will turn on the CUDNN deterministic setting, '
+                          'which can slow down your training considerably! '
+                          'You may see unexpected behavior when restarting '
+                          'from checkpoints.')
 
     args.is_distributed = len(args.hosts) > 1 and args.backend is not None
     args.is_multigpus = args.num_gpus > 1
     args.multigpus_distributed = (args.is_distributed or args.is_multigpus)
 
-    logger.debug("Distributed training - {}".format(args.is_distributed))
+    logger.debug(
+        "multigpus_distributed - {}".format(args.multigpus_distributed))
     logger.debug("Number of gpus available - {}".format(args.num_gpus))
 
-    args.world_size = 1
-    if args.multigpus_distributed:
-        # Initialize the distributed environment.
-        args.apex = True
-        args.world_size = len(args.hosts) * args.num_gpus
-        os.environ['WORLD_SIZE'] = str(args.world_size)
-        args.host_num = args.hosts.index(args.current_host)
-        mp.spawn(fn, nprocs=args.num_gpus, args=(args,))
-    else:
-        current_gpu = 0
-        fn(current_gpu, args)
-
-
-def dist_setting(current_gpu, model, criterion, args):
-    print("channels_last : {}".format(args.channels_last))
-    if args.channels_last:
-        args.memory_format = torch.channels_last
-    else:
-        args.memory_format = torch.contiguous_format
-
-    if args.apex:
-        args.lr = args.lr*float(args.batch_size*args.world_size)/256.
-    args.current_gpu = current_gpu
-    if args.current_gpu is not None:
-        print("Use GPU: {} for training".format(args.current_gpu))
+#     print("######### Start Training #########")
 
     if args.multigpus_distributed:
-        args.rank = args.num_gpus * args.host_num + args.current_gpu
-        dist.init_process_group(backend=args.backend,
-                                rank=args.rank, world_size=args.world_size)
-        logger.info('Initialized the distributed environment: \'{}\' backend on {} nodes. '.format(
-            args.backend, dist.get_world_size()) + 'Current host rank is {}. Number of gpus: {}'.format(
-            dist.get_rank(), args.num_gpus))
+        #         print("channels_last : {}".format(args.channels_last))
+        #         if args.channels_last:
+        #             args.memory_format = torch.channels_last
+        #         else:
+        #             args.memory_format = torch.contiguous_format
 
-    if args.sync_bn:
-        import apex
-        print("using apex synced BN")
-        model = apex.parallel.convert_syncbn_model(model)
-
-    if args.multigpus_distributed:
-        if args.current_gpu is not None:
-            torch.cuda.set_device(args.current_gpu)
-            args.batch_size = int(args.batch_size / args.num_gpus)
-            if not args.apex:
-                model.cuda(args.current_gpu)
-                model = torch.nn.parallel.DistributedDataParallel(
-                    model, device_ids=[args.current_gpu])
+        if args.apex:
+            # Initialize the distributed environment.
+            mp.spawn(fn, nprocs=args.num_gpus, args=(args,))
         else:
-            if not args.apex:
+            if args.data_parallel:
+                dp.init_process_group()
+            elif args.model_parallel:
+                smp.init()
+
+            fn(None, args)
+    else:
+        fn(0, args)
+
+#     return args
+
+
+def dist_setting(model, args):
+    #     args.data_parallel = False
+
+    print("args.data_parallel : {}".format(args.data_parallel))
+    print("args.model_parallel : {}".format(args.model_parallel))
+    print("args.apex : {}".format(args.apex))
+
+    args.world_size = 1
+
+    if args.multigpus_distributed:
+
+        args.host_num = args.hosts.index(args.current_host)
+
+        if args.data_parallel:
+            args.world_size = dp.get_world_size()
+            args.rank = dp.get_rank()   # total rank in all hosts
+            args.local_rank = dp.get_local_rank()  # rank per host
+        elif args.model_parallel:
+            args.world_size = smp.size()
+            args.local_rank = smp.local_rank() # rank per host
+            args.rank = smp.rank()
+            args.dp_size = smp.dp_size()
+            args.dp_rank = smp.dp_rank()
+            print("smp.rank() : {}, smp.size() : {}, smp.mp_rank() : {}, smp.local_size() : {}, smp.get_mp_group() : {}, smp.get_dp_group() : {}, smp.local_rank() : {}, smp.dp_size() : {}, smp.dp_rank() : {}".format(smp.rank(), smp.size(), smp.mp_rank(), smp.local_size(), smp.get_mp_group(), smp.get_dp_group(), smp.local_rank(), smp.dp_size(), smp.dp_rank()))
+        else:
+            args.world_size = len(args.hosts) * args.num_gpus
+            if args.local_rank is not None:
+                args.rank = args.num_gpus * args.host_num + \
+                    args.local_rank  # total rank in all hosts
+
+            dist.init_process_group(backend=args.backend,
+                                    rank=args.rank, world_size=args.world_size)
+            logger.info('Initialized the distributed environment: \'{}\' backend on {} nodes. '.format(
+                args.backend, dist.get_world_size()) + 'Current host rank is {}. Number of gpus: {}'.format(
+                dist.get_rank(), args.num_gpus))
+
+#     if args.sync_bn:
+# #         import apex
+#         print("using apex synced BN")
+#         model = apex.parallel.convert_syncbn_model(model)
+#         # Initialize the distributed environment.
+#         os.environ['WORLD_SIZE'] = str(args.world_size)
+        print("**** [dist_setting] args.rank : {}".format(args.rank))
+
+        print("args.world_size : {}".format(args.world_size))
+        print("Use GPU: {} for training".format(args.local_rank))
+
+        args.lr = args.lr*float(args.world_size)
+
+        args.batch_size //= args.world_size // args.num_gpus
+        args.batch_size = max(args.batch_size, 1)
+
+        if args.local_rank is not None:
+            torch.cuda.set_device(args.local_rank)
+
+            if not (args.apex or args.data_parallel or args.model_parallel):
+                model.cuda(args.local_rank)
+                model = torch.nn.parallel.DistributedDataParallel(
+                    model, device_ids=[args.rank])
+        else:
+            if not (args.apex or args.data_parallel or args.model_parallel):
                 model.cuda()
                 model = torch.nn.parallel.DistributedDataParallel(model)
-    elif args.current_gpu is not None:
-        torch.cuda.set_device(args.current_gpu)
-        if not args.apex:
-            model = model.cuda(args.current_gpu)
+    elif args.rank is not None:
+        torch.cuda.set_device(args.rank)
+        if not (args.apex or args.data_parallel or args.model_parallel):
+            model = model.cuda(args.rank)
     else:
-        if not args.apex:
+        if not (args.apex or args.data_parallel or args.model_parallel):
             model = torch.nn.DataParallel(model).cuda()
 
     return model, args
 
 
 def apex_init(model, optimizer, args):
-    model = model.cuda().to(memory_format=args.memory_format)
+    model = model.cuda()
     model, optimizer = amp.initialize(model, optimizer,
                                       opt_level=args.opt_level,
                                       keep_batchnorm_fp32=args.keep_batchnorm_fp32,
                                       loss_scale=args.loss_scale
                                       )
     if args.multigpus_distributed:
-        model = DDP(model, delay_allreduce=True)
-    return model, optimizer
+        model = apexDDP(model, delay_allreduce=True)
+    return model, optimizer, args
+
+
+def dp_init(model, optimizer, args):
+    model = DDP(model.to(args.device), broadcast_buffers=False)
+#     model = DDP(model, device_ids=[args.rank], broadcast_buffers=False)
+    model.cuda(args.local_rank)
+    return model, optimizer, args
+
+
+def mp_init(model, optimizer, args):
+    model = smp.DistributedModel(model)
+    args.scaler = smp.amp.GradScaler()
+    optimizer = smp.DistributedOptimizer(optimizer)
+    if args.partial_checkpoint:
+        args.checkpoint = smp.load(args.partial_checkpoint, partial=True)
+        model.load_state_dict(args.checkpoint["model_state_dict"])
+        optimizer.load_state_dict(args.checkpoint["optimizer_state_dict"])
+    elif args.full_checkpoint:
+        args.checkpoint = smp.load(args.full_checkpoint, partial=False)
+        model.load_state_dict(args.checkpoint["model_state_dict"])
+        optimizer.load_state_dict(args.checkpoint["optimizer_state_dict"])
+
+    return model, optimizer, args
+def apex_loss(loss, optimizer):
+    with amp.scale_loss(loss, optimizer) as scaled_loss:
+        scaled_loss.backward()
 
 
 def reduce_tensor(tensor, args):
     rt = tensor.clone()
-    dist.all_reduce(rt, op=dist.reduce_op.SUM)
-    rt /= args.world_size
+#     print("rt : {}".format(rt))
+#     dp.all_reduce(rt)
+#     print("args.world_size : {}".format(args.world_size))
+#     rt /= args.world_size
     return rt
 
 
-def fast_collate(batch, memory_format=torch.channels_last):
-    imgs = [img[0] for img in batch]
-    targets = torch.tensor([target[1] for target in batch], dtype=torch.int64)
-    w = imgs[0].size[0]
-    h = imgs[0].size[1]
-    tensor = torch.zeros((len(imgs), 3, h, w), dtype=torch.uint8).contiguous(
-        memory_format=memory_format)
-    for i, img in enumerate(imgs):
-        nump_array = np.array(img, dtype=np.uint8)
-        if(nump_array.ndim < 3):
-            nump_array = np.expand_dims(nump_array, axis=-1)
-        nump_array = np.rollaxis(nump_array, 2)
-        tensor[i] += torch.from_numpy(nump_array)
-    return tensor, targets
+def smp_lossgather(loss, args):
+    if args.use_horovod or args.use_ddp:
+        # Rubik: If using data parallelism, gather all losses across different model
+        # replicas and check if losses match.
+
+        losses = smp.allgather(loss, smp.DP_GROUP)
+        for l in losses:
+            assert math.isclose(l, losses[0])
+
+        assert loss < 0.14
+    else:
+        assert loss < 0.08
+
+
+def smp_savemodel(model, optimizer, args):
+    smp.barrier()
+    if args.dp_rank == 0:
+        model_dict = model.local_state_dict()
+        opt_dict = optimizer.local_state_dict()
+        smp.save(
+            {"model_state_dict": model_dict, "optimizer_state_dict": opt_dict},
+            f"/opt/ml/local_checkpoints/model_checkpoint.pt",
+            partial=True,
+        )
+    smp.barrier()
+    
+    if args.save_full_model:
+        if args.dp_rank == 0:
+            model_dict = model.state_dict()
+            opt_dict = optimizer.state_dict()
+            smp.save(
+                {"model_state_dict": model_dict, "optimizer_state_dict": opt_dict},
+                "./pt_mnist_checkpoint.pt",
+                partial=False,
+            )
+    # Waiting the save checkpoint to be finished before run another allgather_object
+    smp.barrier()
+
+    return model, optimizer, args
+
+# Rubik: Define smp.step. Return any tensors needed outside.
+# @smp.step
+def train_step(model, criterion, input, target, scaler, args):
+    with autocast(1 > 0):
+        output = model(input)
+
+    loss = criterion(output, target)
+
+    # scaled_loss = scaler.scale(loss) if args.amp else loss
+    model.backward(loss)
+    return output, loss
+
+
+# Rubik: Define smp.step for evaluation.
+# @smp.step
+def test_step(model, criterion, input, target):
+    output = model(input)
+    # sum up batch loss
+    loss = criterion(output, target, reduction="sum").item()
+    return output, loss

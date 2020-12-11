@@ -19,14 +19,16 @@ import torch.optim as optim
 import torch.utils.data.distributed
 from torchvision import models
 
-import sagemaker_containers
+from collections import OrderedDict
+
+# import sagemaker_containers
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 logger.addHandler(logging.StreamHandler(sys.stdout))
 
 
-def torch_model(model_name, pretrained=True):
+def torch_model(model_name, pretrained=True, num_classes=0):
     model_names = sorted(name for name in models.__dict__
                          if name.islower() and not name.startswith("__")
                          and callable(models.__dict__[name]))
@@ -42,6 +44,17 @@ def torch_model(model_name, pretrained=True):
     else:
         print("=> creating model '{}'".format(model_name))
         model = models.__dict__[model_name]()
+
+    if num_classes > 0:
+        n_inputs = model.fc.in_features
+
+        # add more layers as required
+        classifier = nn.Sequential(OrderedDict([
+            ('fc', nn.Linear(n_inputs, num_classes))
+        ]))
+
+        model.fc = classifier
+
     return model
 
 
@@ -112,7 +125,7 @@ class ProgressMeter(object):
         fmt = '{:' + str(num_digits) + 'd}'
         return '[' + fmt + '/' + fmt.format(num_batches) + ']'
 
-        
+
 def adjust_learning_rate(optimizer, epoch, step, len_epoch, args):
     """LR schedule that should yield 76% converged accuracy with batch size 256"""
     factor = epoch // 30
@@ -126,46 +139,11 @@ def adjust_learning_rate(optimizer, epoch, step, len_epoch, args):
     if epoch < 5:
         lr = lr*float(1 + step + epoch*len_epoch)/(5.*len_epoch)
 
-    if(args.current_gpu == 0):
+    if args.rank == 0:
         print("epoch = {}, step = {}, lr = {}".format(epoch, step, lr))
 
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
-        
-        
-class data_prefetcher():
-    def __init__(self, loader):
-        self.loader = iter(loader)
-        self.stream = torch.cuda.Stream()
-        self.mean = torch.tensor([0.5 * 255, 0.5 * 255, 0.5 * 255]).cuda().view(1,3,1,1)
-        self.std = torch.tensor([0.5 * 255, 0.5 * 255, 0.5 * 255]).cuda().view(1,3,1,1)
-        self.preload()
-
-    def preload(self):
-        try:
-            self.next_input, self.next_target = next(self.loader)
-        except StopIteration:
-            self.next_input = None
-            self.next_target = None
-            return
-
-        with torch.cuda.stream(self.stream):
-            self.next_input = self.next_input.cuda(non_blocking=True)
-            self.next_target = self.next_target.cuda(non_blocking=True)
-            self.next_input = self.next_input.float()
-            self.next_input = self.next_input.sub_(self.mean).div_(self.std)
-
-    def next(self):
-        torch.cuda.current_stream().wait_stream(self.stream)
-        input = self.next_input
-        target = self.next_target
-        if input is not None:
-            input.record_stream(torch.cuda.current_stream())
-        if target is not None:
-            target.record_stream(torch.cuda.current_stream())
-        self.preload()
-        return input, target
-    
 
 
 def save_history(path, history):
@@ -178,8 +156,14 @@ def save_history(path, history):
     with codecs.open(path, 'w', encoding='utf-8') as f:
         json.dump(history_for_json, f, separators=(
             ',', ':'), sort_keys=True, indent=4)
-        
-        
+
+
+def to_python_float(t):
+    if hasattr(t, 'item'):
+        return t.item()
+    else:
+        return t[0]
+
 
 def init_modelhistory(model_history):
     model_history['epoch'] = []
