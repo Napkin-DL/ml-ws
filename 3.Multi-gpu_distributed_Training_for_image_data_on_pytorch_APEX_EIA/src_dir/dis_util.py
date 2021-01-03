@@ -5,6 +5,7 @@ import numpy as np
 import os
 import random
 import sys
+import shutil
 import warnings
 
 import torch
@@ -18,18 +19,19 @@ import torch.optim as optim
 import torch.utils.data.distributed
 from torch.cuda.amp import autocast
 
+import util
+
 # smdist import package
 try:
     # Import smdist PyTorch Modules
-    import smdistributed.dataparallel.torch.distributed as dp
+    import smdistributed.dataparallel.torch.distributed as sdp
     from smdistributed.dataparallel.torch.parallel.distributed import DistributedDataParallel as DDP
     # SMP: Import SMP API
-#     import smdistributed.modelparallel.torch as smp 
+    import smdistributed.modelparallel.torch as smp
 
 except ImportError:
     pass
 #     raise ImportError("Please install smdist.")
-
 
 try:
     from apex.parallel import DistributedDataParallel as apexDDP
@@ -39,8 +41,8 @@ try:
     from apex.multi_tensor_apply import multi_tensor_applier
 except ImportError:
     raise ImportError(
-        "Please install apex from https://www.github.com/nvidia/apex to run this example.")
-
+        "Please install apex from https://www.github.com/nvidia/apex to run this example."
+    )
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -55,7 +57,6 @@ def dist_init(fn, args):
         torch.cuda.manual_seed_all(args.seed)
         cudnn.deterministic = True
 
-
         if cudnn.deterministic:
             warnings.warn('You have chosen to seed training. '
                           'This will turn on the CUDNN deterministic setting, '
@@ -67,11 +68,11 @@ def dist_init(fn, args):
     args.is_multigpus = args.num_gpus > 1
     args.multigpus_distributed = (args.is_distributed or args.is_multigpus)
 
-    logger.debug(
-        "multigpus_distributed - {}".format(args.multigpus_distributed))
+    logger.debug("multigpus_distributed - {}".format(
+        args.multigpus_distributed))
     logger.debug("Number of gpus available - {}".format(args.num_gpus))
 
-#     print("######### Start Training #########")
+    #     print("######### Start Training #########")
 
     if args.multigpus_distributed:
         #         print("channels_last : {}".format(args.channels_last))
@@ -82,21 +83,25 @@ def dist_init(fn, args):
 
         if args.apex:
             # Initialize the distributed environment.
-            mp.spawn(fn, nprocs=args.num_gpus, args=(args,))
+            mp.spawn(fn, nprocs=args.num_gpus, args=(args, ))
         else:
-            if args.data_parallel:
-                dp.init_process_group()
-            elif args.model_parallel:
+            if args.data_parallel and not sdp.is_initialized():
+                sdp.init_process_group()
+            elif args.model_parallel and not smp.is_initialized():
                 smp.init()
 
             fn(None, args)
+
+            if args.model_parallel:
+                smp.barrier()
     else:
         fn(0, args)
+
 
 #     return args
 
 
-def dist_setting(model, args):
+def dist_setting(args):
     #     args.data_parallel = False
 
     print("args.data_parallel : {}".format(args.data_parallel))
@@ -104,49 +109,56 @@ def dist_setting(model, args):
     print("args.apex : {}".format(args.apex))
 
     args.world_size = 1
+    args.host_num = args.hosts.index(args.current_host)
 
-    if args.multigpus_distributed:
+    if args.data_parallel:
+        args.world_size = sdp.get_world_size()
+        args.rank = sdp.get_rank()  # total rank in all hosts
+        args.local_rank = sdp.get_local_rank()  # rank per host
+    elif args.model_parallel:
+        args.world_size = smp.size()
+        args.local_rank = smp.local_rank()  # rank per host
+        args.rank = smp.rank()
+        args.dp_size = smp.dp_size()
+        args.dp_rank = smp.dp_rank()
+        print(
+            "smp.rank() : {}, smp.size() : {}, smp.mp_rank() : {}, smp.local_size() : {}, smp.get_mp_group() : {}, smp.get_dp_group() : {}, smp.local_rank() : {}, smp.dp_size() : {}, smp.dp_rank() : {}"
+            .format(smp.rank(), smp.size(), smp.mp_rank(), smp.local_size(),
+                    smp.get_mp_group(), smp.get_dp_group(), smp.local_rank(),
+                    smp.dp_size(), smp.dp_rank()))
+    else:
+        args.world_size = len(args.hosts) * args.num_gpus
+        if args.local_rank is not None:
+            args.rank = args.num_gpus * args.host_num + \
+                args.local_rank  # total rank in all hosts
 
-        args.host_num = args.hosts.index(args.current_host)
-
-        if args.data_parallel:
-            args.world_size = dp.get_world_size()
-            args.rank = dp.get_rank()   # total rank in all hosts
-            args.local_rank = dp.get_local_rank()  # rank per host
-        elif args.model_parallel:
-            args.world_size = smp.size()
-            args.local_rank = smp.local_rank() # rank per host
-            args.rank = smp.rank()
-            args.dp_size = smp.dp_size()
-            args.dp_rank = smp.dp_rank()
-            print("smp.rank() : {}, smp.size() : {}, smp.mp_rank() : {}, smp.local_size() : {}, smp.get_mp_group() : {}, smp.get_dp_group() : {}, smp.local_rank() : {}, smp.dp_size() : {}, smp.dp_rank() : {}".format(smp.rank(), smp.size(), smp.mp_rank(), smp.local_size(), smp.get_mp_group(), smp.get_dp_group(), smp.local_rank(), smp.dp_size(), smp.dp_rank()))
-        else:
-            args.world_size = len(args.hosts) * args.num_gpus
-            if args.local_rank is not None:
-                args.rank = args.num_gpus * args.host_num + \
-                    args.local_rank  # total rank in all hosts
-
-            dist.init_process_group(backend=args.backend,
-                                    rank=args.rank, world_size=args.world_size)
-            logger.info('Initialized the distributed environment: \'{}\' backend on {} nodes. '.format(
-                args.backend, dist.get_world_size()) + 'Current host rank is {}. Number of gpus: {}'.format(
+        dist.init_process_group(backend=args.backend,
+                                rank=args.rank,
+                                world_size=args.world_size)
+        logger.info(
+            'Initialized the distributed environment: \'{}\' backend on {} nodes. '
+            .format(args.backend, dist.get_world_size()) +
+            'Current host rank is {}. Number of gpus: {}'.format(
                 dist.get_rank(), args.num_gpus))
 
-#     if args.sync_bn:
-# #         import apex
-#         print("using apex synced BN")
-#         model = apex.parallel.convert_syncbn_model(model)
-#         # Initialize the distributed environment.
-#         os.environ['WORLD_SIZE'] = str(args.world_size)
-        print("**** [dist_setting] args.rank : {}".format(args.rank))
+    print("**** [dist_setting] args.rank : {}".format(args.rank))
+    print("args.world_size : {}".format(args.world_size))
+    print("Use GPU: {} for training".format(args.local_rank))
 
-        print("args.world_size : {}".format(args.world_size))
-        print("Use GPU: {} for training".format(args.local_rank))
+    args.lr = args.lr * float(args.world_size)
 
-        args.lr = args.lr*float(args.world_size)
+    args.batch_size //= args.world_size // args.num_gpus
+    args.batch_size = max(args.batch_size, 1)
 
-        args.batch_size //= args.world_size // args.num_gpus
-        args.batch_size = max(args.batch_size, 1)
+    return args
+
+
+def dist_model(model, args):
+    if args.multigpus_distributed:
+        #     if args.sync_bn:
+        # #         import apex
+        #         print("using apex synced BN")
+        #         model = apex.parallel.convert_syncbn_model(model)
 
         if args.local_rank is not None:
             torch.cuda.set_device(args.local_rank)
@@ -172,24 +184,25 @@ def dist_setting(model, args):
 
 def apex_init(model, optimizer, args):
     model = model.cuda()
-    model, optimizer = amp.initialize(model, optimizer,
-                                      opt_level=args.opt_level,
-                                      keep_batchnorm_fp32=args.keep_batchnorm_fp32,
-                                      loss_scale=args.loss_scale
-                                      )
+    model, optimizer = amp.initialize(
+        model,
+        optimizer,
+        opt_level=args.opt_level,
+        keep_batchnorm_fp32=args.keep_batchnorm_fp32,
+        loss_scale=args.loss_scale)
     if args.multigpus_distributed:
         model = apexDDP(model, delay_allreduce=True)
     return model, optimizer, args
 
 
-def dp_init(model, optimizer, args):
+def sdp_init(model, optimizer, args):
     model = DDP(model.to(args.device), broadcast_buffers=False)
-#     model = DDP(model, device_ids=[args.rank], broadcast_buffers=False)
+    #     model = DDP(model, device_ids=[args.rank], broadcast_buffers=False)
     model.cuda(args.local_rank)
     return model, optimizer, args
 
 
-def mp_init(model, optimizer, args):
+def smp_init(model, optimizer, args):
     model = smp.DistributedModel(model)
     args.scaler = smp.amp.GradScaler()
     optimizer = smp.DistributedOptimizer(optimizer)
@@ -203,6 +216,8 @@ def mp_init(model, optimizer, args):
         optimizer.load_state_dict(args.checkpoint["optimizer_state_dict"])
 
     return model, optimizer, args
+
+
 def apex_loss(loss, optimizer):
     with amp.scale_loss(loss, optimizer) as scaled_loss:
         scaled_loss.backward()
@@ -210,10 +225,10 @@ def apex_loss(loss, optimizer):
 
 def reduce_tensor(tensor, args):
     rt = tensor.clone()
-#     print("rt : {}".format(rt))
-#     dp.all_reduce(rt)
-#     print("args.world_size : {}".format(args.world_size))
-#     rt /= args.world_size
+    #     print("rt : {}".format(rt))
+    #     sdp.all_reduce(rt)
+    #     print("args.world_size : {}".format(args.world_size))
+    #     rt /= args.world_size
     return rt
 
 
@@ -231,49 +246,90 @@ def smp_lossgather(loss, args):
         assert loss < 0.08
 
 
-def smp_savemodel(model, optimizer, args):
+def smp_savemodel(model, optimizer, is_best, args):
+    filepath = '/opt/ml/local_checkpoints'
+    filename = os.path.join(filepath, 'smp_full_checkpoint.pt')
+
+    if args.rank == 0:
+        if os.path.exists(filepath):
+            print("-INFO- PATH DO EXIST")
+        else:
+            os.makedirs(filepath)
+            print("-INFO- PATH DO NOT EXIST")
     smp.barrier()
+
+    print("******** args.dp_rank : {}".format(args.dp_rank))
+    print("******** args.save_full_model : {}".format(args.save_full_model))
+
     if args.dp_rank == 0:
-        model_dict = model.local_state_dict()
-        opt_dict = optimizer.local_state_dict()
-        smp.save(
-            {"model_state_dict": model_dict, "optimizer_state_dict": opt_dict},
-            f"/opt/ml/local_checkpoints/model_checkpoint.pt",
-            partial=True,
-        )
-    smp.barrier()
-    
-    if args.save_full_model:
-        if args.dp_rank == 0:
+        if args.save_full_model:
             model_dict = model.state_dict()
             opt_dict = optimizer.state_dict()
             smp.save(
-                {"model_state_dict": model_dict, "optimizer_state_dict": opt_dict},
-                "./pt_mnist_checkpoint.pt",
+                {
+                    "model_state_dict": model_dict,
+                    "optimizer_state_dict": opt_dict
+                },
+                filename,
                 partial=False,
             )
-    # Waiting the save checkpoint to be finished before run another allgather_object
+        else:
+            model_dict = model.local_state_dict()
+            opt_dict = optimizer.local_state_dict()
+            smp.save(
+                {
+                    "model_state_dict": model_dict,
+                    "optimizer_state_dict": opt_dict
+                },
+                filename,
+                partial=True,
+            )
     smp.barrier()
 
-    return model, optimizer, args
+    if args.rank == 0:
+        print("Start syncing")
+        base_s3_path = os.path.dirname(
+            os.path.dirname(os.getenv('SM_MODULE_DIR', '')))
+        curr_host = os.getenv('SM_CURRENT_HOST')
+        full_s3_path = f'{base_s3_path}/checkpoints/{curr_host}/'
+        util.sync_local_checkpoints_to_s3(local_path=filepath,
+                                          s3_path=full_s3_path)
+        print("Finished syncing")
 
-# Rubik: Define smp.step. Return any tensors needed outside.
-# @smp.step
-def train_step(model, criterion, input, target, scaler, args):
-    with autocast(1 > 0):
+        print("is_best : {}".format(is_best))
+        if is_best:
+            shutil.copyfile(filename,
+                            os.path.join(args.model_dir, 'model_best.pth'))
+    smp.barrier()
+
+
+def barrier():
+    smp.barrier()
+
+
+try:
+    # Rubik: Define smp.step. Return any tensors needed outside.
+    @smp.step
+    def train_step(model, criterion, input, target, scaler, args):
+        with autocast(1 > 0):
+            output = model(input)
+
+        loss = criterion(output, target)
+
+        loss = loss.mean()
+
+        print("***** smp train_step : {}".format(loss))
+        # scaled_loss = scaler.scale(loss) if args.amp else loss
+        model.backward(loss)
+        return output, loss
+
+    # Rubik: Define smp.step for evaluation.
+    @smp.step
+    def test_step(model, criterion, input, target):
         output = model(input)
-
-    loss = criterion(output, target)
-
-    # scaled_loss = scaler.scale(loss) if args.amp else loss
-    model.backward(loss)
-    return output, loss
-
-
-# Rubik: Define smp.step for evaluation.
-# @smp.step
-def test_step(model, criterion, input, target):
-    output = model(input)
-    # sum up batch loss
-    loss = criterion(output, target, reduction="sum").item()
-    return output, loss
+        loss = criterion(output, target)
+        loss = loss.mean()
+        print("***** smp test_step : {}".format(loss))
+        return output, loss
+except:
+    pass

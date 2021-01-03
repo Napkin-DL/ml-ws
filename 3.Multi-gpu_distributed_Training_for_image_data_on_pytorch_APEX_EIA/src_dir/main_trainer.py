@@ -22,20 +22,20 @@ import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader, Dataset
 from torchnet.dataset import SplitDataset
-
+import webdataset as wds
 
 from albumentations import (
-    RandomResizedCrop ,HorizontalFlip, IAAPerspective, ShiftScaleRotate, CLAHE, RandomRotate90,
-    Transpose, ShiftScaleRotate, Blur, OpticalDistortion, GridDistortion, HueSaturationValue,
-    IAAAdditiveGaussianNoise, GaussNoise, MotionBlur, MedianBlur, RandomBrightnessContrast, IAAPiecewiseAffine,
-    IAASharpen, IAAEmboss, Flip, OneOf, Compose, Resize, VerticalFlip, HorizontalFlip, CenterCrop,Normalize
-)
+    RandomResizedCrop, HorizontalFlip, IAAPerspective, ShiftScaleRotate, CLAHE,
+    RandomRotate90, Transpose, ShiftScaleRotate, Blur, OpticalDistortion,
+    GridDistortion, HueSaturationValue, IAAAdditiveGaussianNoise, GaussNoise,
+    MotionBlur, MedianBlur, RandomBrightnessContrast, IAAPiecewiseAffine,
+    IAASharpen, IAAEmboss, Flip, OneOf, Compose, Resize, VerticalFlip,
+    HorizontalFlip, CenterCrop, Normalize)
 
 import dis_util
 import util
-        
-# print("######### Start Training #########")
 
+# print("######### Start Training #########")
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -48,41 +48,50 @@ class AlbumentationImageDataset(Dataset):
         self.transform = transform
         self.args = args
         self.check_img = check_img
-        self.image_list =self._loader_file(self.image_path, self.check_img)
+        self.image_list = self._loader_file(self.image_path, self.check_img)
 
     def __len__(self):
         return (len(self.image_list))
 
     def __getitem__(self, i):
-        
+
         image = cv2.imread(self.image_list[i][0])
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         # Augment an image
         transformed = self.transform(image=image)["image"]
-        transformed_image = np.transpose(transformed, (2, 0, 1)).astype(np.float32)
-        return torch.tensor(transformed_image, dtype=torch.float), self.image_list[i][1]
-    
+        transformed_image = np.transpose(transformed,
+                                         (2, 0, 1)).astype(np.float32)
+        return torch.tensor(transformed_image,
+                            dtype=torch.float), self.image_list[i][1]
+
     def _loader_file(self, image_path, check_img):
-        extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif', '.tiff', '.webp')
+        extensions = ('.jpg', '.jpeg', '.png', '.ppm', '.bmp', '.pgm', '.tif',
+                      '.tiff', '.webp')
+
         def is_valid_file(x: str) -> bool:
             return x.lower().endswith(extensions)
+
         is_valid_file = cast(Callable[[str], bool], is_valid_file)
-        
+
         self.classes = [d.name for d in os.scandir(image_path) if d.is_dir()]
         self.classes.sort()
-        self.class_to_idx = {cls_name: i for i, cls_name in enumerate(self.classes)}
-        
+        self.class_to_idx = {
+            cls_name: i
+            for i, cls_name in enumerate(self.classes)
+        }
+
         instances = []
         for target_class in sorted(self.class_to_idx.keys()):
             class_index = self.class_to_idx[target_class]
             target_dir = os.path.join(image_path, target_class)
             if not os.path.isdir(target_dir):
                 continue
-            for root, _, fnames in sorted(os.walk(target_dir, followlinks=True)):
+            for root, _, fnames in sorted(os.walk(target_dir,
+                                                  followlinks=True)):
                 for fname in sorted(fnames):
                     path = os.path.join(root, fname)
-                    
+
                     if is_valid_file(path):
                         not_insert = False
                         if check_img:
@@ -97,21 +106,37 @@ class AlbumentationImageDataset(Dataset):
                             item = path, class_index
                             instances.append(item)
         return instances
-    
-    
+
+
 def args_fn():
     parser = argparse.ArgumentParser(description='PyTorch Resnet50 Example')
 
     # Default Setting
-    parser.add_argument('--log-interval', type=int, default=5, metavar='N',
-                        help='how many batches to wait before logging training status')
-    parser.add_argument('--backend', type=str, default='nccl',
-                        help='backend for distributed training (tcp, gloo on cpu and gloo, nccl on gpu)')
+    parser.add_argument(
+        '--log-interval',
+        type=int,
+        default=5,
+        metavar='N',
+        help='how many batches to wait before logging training status')
+    parser.add_argument(
+        '--backend',
+        type=str,
+        default='nccl',
+        help=
+        'backend for distributed training (tcp, gloo on cpu and gloo, nccl on gpu)'
+    )
     parser.add_argument('--channels-last', type=bool, default=True)
-    parser.add_argument('--seed', type=int, default=1, metavar='S',
+    parser.add_argument('--seed',
+                        type=int,
+                        default=1,
+                        metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('-p', '--print-freq', default=10, type=int,
-                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('-p',
+                        '--print-freq',
+                        default=10,
+                        type=int,
+                        metavar='N',
+                        help='print frequency (default: 10)')
 
     # Hyperparameter Setting
     parser.add_argument('--model_name', type=str, default='resnet50')
@@ -121,7 +146,10 @@ def args_fn():
     parser.add_argument('--num-classes', type=int, default=10)
     parser.add_argument('--num-epochs', type=int, default=3)
     parser.add_argument('--batch-size', type=int, default=64)
-    parser.add_argument('--test-batch-size', type=int, default=200, metavar='N',
+    parser.add_argument('--test-batch-size',
+                        type=int,
+                        default=200,
+                        metavar='N',
                         help='input batch size for testing (default: 200)')
 
     # Setting for Distributed Training
@@ -131,55 +159,68 @@ def args_fn():
     parser.add_argument('--opt-level', type=str, default='O0')
     parser.add_argument('--keep-batchnorm-fp32', type=str, default=None)
     parser.add_argument('--loss-scale', type=str, default=None)
-    parser.add_argument('--sync_bn', action='store_true',
+    parser.add_argument('--sync_bn',
+                        action='store_true',
                         help='enabling apex sync BN.')
-    parser.add_argument('--prof', default=-1, type=int,
+    parser.add_argument('--prof',
+                        default=-1,
+                        type=int,
                         help='Only run 10 iterations for profiling.')
-    
-    # RUBIK Setting for Model Parallel
-    parser.add_argument("--num-microbatches", type=int, default=4)
-    parser.add_argument("--num-batches", type=int, default=0)
-    parser.add_argument("--num-partitions", type=int, default=2)
+
+    # Setting for Model Parallel
+    #     parser.add_argument("--num-microbatches", type=int, default=4)
+    #     parser.add_argument("--num-batches", type=int, default=0)
+    #     parser.add_argument("--num-partitions", type=int, default=2)
     parser.add_argument("--horovod", type=int, default=0)
+    parser.add_argument('--mp_parameters', type=str, default='')
     parser.add_argument("--ddp", type=int, default=0)
     parser.add_argument("--amp", type=int, default=0)
+    parser.add_argument("--save_full_model", type=bool, default=True)
     parser.add_argument("--pipeline", type=str, default="interleaved")
     parser.add_argument("--assert-losses", type=int, default=0)
-    parser.add_argument(
-        "--partial-checkpoint", type=str, default="", help="The checkpoint path to load"
-    )
-    parser.add_argument(
-        "--full-checkpoint", type=str, default="", help="The checkpoint path to load"
-    )
-    parser.add_argument(
-        "--save-full-model", action="store_true", default=False, help="For Saving the current Model"
-    )
+    parser.add_argument("--partial-checkpoint",
+                        type=str,
+                        default="",
+                        help="The checkpoint path to load")
+    parser.add_argument("--full-checkpoint",
+                        type=str,
+                        default="",
+                        help="The checkpoint path to load")
+    parser.add_argument("--save-full-model",
+                        action="store_true",
+                        default=False,
+                        help="For Saving the current Model")
     parser.add_argument(
         "--save-partial-model",
         action="store_true",
         default=False,
         help="For Saving the current Model",
     )
-    
-    
 
     # SageMaker Container environment
-    parser.add_argument('--hosts', type=list,
+    parser.add_argument('--hosts',
+                        type=list,
                         default=json.loads(os.environ['SM_HOSTS']))
-    parser.add_argument('--current-host', type=str,
+    parser.add_argument('--current-host',
+                        type=str,
                         default=os.environ['SM_CURRENT_HOST'])
-    parser.add_argument('--model-dir', type=str,
+    parser.add_argument('--model-dir',
+                        type=str,
                         default=os.environ['SM_MODEL_DIR'])
-    parser.add_argument('--data-dir', type=str,
+    parser.add_argument('--data-dir',
+                        type=str,
                         default=os.environ['SM_CHANNEL_TRAINING'])
-    parser.add_argument('--num-gpus', type=int,
+    parser.add_argument('--num-gpus',
+                        type=int,
                         default=os.environ['SM_NUM_GPUS'])
-    parser.add_argument('--output_data_dir', type=str,
+    parser.add_argument('--output_data_dir',
+                        type=str,
                         default=os.environ['SM_OUTPUT_DATA_DIR'])
     parser.add_argument('--rank', type=int, default=0)
-    
-    args = parser.parse_args()    
+
+    args = parser.parse_args()
     return args
+
 
 def _get_train_data_loader(args, **kwargs):
 
@@ -189,66 +230,78 @@ def _get_train_data_loader(args, **kwargs):
             IAAAdditiveGaussianNoise(),
             GaussNoise(),
         ], p=0.2),
-        VerticalFlip(p=0.5),  
+        VerticalFlip(p=0.5),
         OneOf([
             MotionBlur(p=.2),
             MedianBlur(blur_limit=3, p=0.1),
             Blur(blur_limit=3, p=0.1),
-        ], p=0.2),
+        ],
+              p=0.2),
         OneOf([
             CLAHE(clip_limit=2),
             IAASharpen(),
             IAAEmboss(),
-            RandomBrightnessContrast(),            
-        ], p=0.3),
+            RandomBrightnessContrast(),
+        ],
+              p=0.3),
         HueSaturationValue(p=0.3),
         Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225],
         )
-        ], p=1.0)
-    
-    dataset = AlbumentationImageDataset(
-        image_path=os.path.join(args.data_dir, 'train'),
-        transform=transform,
-        args=args,
-        check_img=True
-    )
-    
+    ],
+                        p=1.0)
+
     train_sampler = None
     train_dataloader = None
-    # If using DDP or Horovod, split the dataset among the model replicas
-    if args.model_parallel and args.apex and args.dp_size > 1:
-        partitions_dict = {f"{i}": 1 / args.dp_size for i in range(args.dp_size)}
-        split_dataset = SplitDataset(dataset, partitions=partitions_dict)
-        split_dataset.select(f"{args.dp_rank}")
-        
-        train_dataloader = data.DataLoader(split_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
-    else:    
-        train_sampler = data.distributed.DistributedSampler(
-            dataset, num_replicas=int(args.world_size), rank=int(args.rank)) if args.multigpus_distributed else None
-        train_dataloader = data.DataLoader(dataset, batch_size=args.batch_size, shuffle=train_sampler is None,
-                               sampler=train_sampler, **kwargs)
+
+    dataset = AlbumentationImageDataset(image_path=os.path.join(
+        args.data_dir, 'train'),
+                                        transform=transform,
+                                        args=args,
+                                        check_img=True)
+
+    drop_last = args.model_parallel
+
+    train_sampler = data.distributed.DistributedSampler(
+        dataset, num_replicas=int(args.world_size), rank=int(
+            args.rank)) if args.multigpus_distributed else None
+    train_dataloader = data.DataLoader(dataset,
+                                       batch_size=args.batch_size,
+                                       shuffle=train_sampler is None,
+                                       sampler=train_sampler,
+                                       drop_last=drop_last,
+                                       **kwargs)
     return train_dataloader, train_sampler
 
 
 def _get_test_data_loader(args, **kwargs):
     logger.info("Get test data loader")
     transform = Compose([
-        Resize(args.height,args.width),
+        Resize(args.height, args.width),
         Normalize(
             mean=[0.485, 0.456, 0.406],
             std=[0.229, 0.224, 0.225],
         )
-    ]) 
+    ])
 
-    dataset = AlbumentationImageDataset(
-        image_path=os.path.join(args.data_dir, 'val'),
-        transform=transform,
-        args=args,
-        check_img=True
-    )
-    return data.DataLoader(dataset, batch_size=args.test_batch_size, shuffle=False)
+    image_path = os.path.join(args.data_dir, 'val')
+    dataset = AlbumentationImageDataset(image_path=image_path,
+                                        transform=transform,
+                                        args=args,
+                                        check_img=True)
+
+    drop_last = args.model_parallel
+    print("test drop_last : {}".format(drop_last))
+    test_sampler = data.distributed.DistributedSampler(
+        dataset, num_replicas=int(args.world_size), rank=int(
+            args.rank)) if args.multigpus_distributed else None
+
+    return data.DataLoader(dataset,
+                           batch_size=args.test_batch_size,
+                           shuffle=False,
+                           sampler=test_sampler,
+                           drop_last=drop_last)
 
 
 def train(local_rank, args):
@@ -256,18 +309,24 @@ def train(local_rank, args):
     model_history = {}
     model_history = util.init_modelhistory(model_history)
     train_start = time.time()
-    print("local_rank : {}".format(local_rank))
+
+    # distributed_setting
+    if args.multigpus_distributed:
+        args = dis_util.dist_setting(args)
+
     if local_rank is not None:
         args.local_rank = local_rank
 
     # choose model from pytorch model_zoo
-    model = util.torch_model(args.model_name, pretrained=True, num_classes=args.num_classes)  # 1000 resnext101_32x8d
+    model = util.torch_model(
+        args.model_name,
+        num_classes=args.num_classes,
+        pretrained=True,
+        local_rank=args.local_rank,
+        model_parallel=args.model_parallel)  # 1000 resnext101_32x8d
     criterion = nn.CrossEntropyLoss().cuda()
 
-    # distributed_setting
-    model, args = dis_util.dist_setting(model, args)
-    
-    print("******. args.batch_size : {}".format(args.batch_size))
+    model, args = dis_util.dist_model(model, args)
 
     # CuDNN library will benchmark several algorithms and pick that which it found to be fastest
     cudnn.benchmark = False if args.seed else True
@@ -277,25 +336,25 @@ def train(local_rank, args):
     if args.apex:
         model, optimizer, args = dis_util.apex_init(model, optimizer, args)
     elif args.model_parallel:
-        model, optimizer, args = dis_util.mp_init(model, optimizer, args)
+        model, optimizer, args = dis_util.smp_init(model, optimizer, args)
     elif args.data_parallel:
-        model, optimizer, args = dis_util.dp_init(model, optimizer, args)
+        model, optimizer, args = dis_util.sdp_init(model, optimizer, args)
 
     train_loader, train_sampler = _get_train_data_loader(args, **args.kwargs)
 
     logger.info("Processes {}/{} ({:.0f}%) of train data".format(
         len(train_loader.sampler), len(train_loader.dataset),
-        100. * len(train_loader.sampler) / len(train_loader.dataset)
-    ))
+        100. * len(train_loader.sampler) / len(train_loader.dataset)))
 
+    test_loader = _get_test_data_loader(args, **args.kwargs)
 
-    if args.rank == 0:
-        test_loader = _get_test_data_loader(args, **args.kwargs)
+    #     if args.rank == 0:
+    logger.info("Processes {}/{} ({:.0f}%) of test data".format(
+        len(test_loader.sampler), len(test_loader.dataset),
+        100. * len(test_loader.sampler) / len(test_loader.dataset)))
 
-        logger.info("Processes {}/{} ({:.0f}%) of test data".format(
-            len(test_loader.sampler), len(test_loader.dataset),
-            100. * len(test_loader.sampler) / len(test_loader.dataset)
-        ))
+    print(" local_rank : {}, local_batch_size : {}".format(
+        local_rank, args.batch_size))
 
     for epoch in range(1, args.num_epochs + 1):
         ##
@@ -305,8 +364,7 @@ def train(local_rank, args):
         top1 = util.AverageMeter('Acc@1', ':6.2f')
         top5 = util.AverageMeter('Acc@5', ':6.2f')
         progress = util.ProgressMeter(
-            len(train_loader),
-            [batch_time, data_time, losses, top1, top5],
+            len(train_loader), [batch_time, data_time, losses, top1, top5],
             prefix="Epoch: [{}]".format(epoch))
 
         model.train()
@@ -317,19 +375,22 @@ def train(local_rank, args):
             train_sampler.set_epoch(epoch)
 
         for batch_idx, (input, target) in enumerate(train_loader):
-            #             input = input.cuda()
-            #             target = target.cuda()
             input = input.to(args.device)
             target = target.to(args.device)
             batch_idx += 1
 
-#             util.adjust_learning_rate(optimizer, epoch, batch_idx, len(train_loader), args)
+            #             util.adjust_learning_rate(optimizer, epoch, batch_idx, len(train_loader), args)
 
             if args.model_parallel:
-                output, loss_mb = dis_util.train_step(model, criterion, input, target, args.scaler, args)
+                print("** smp_train_step **")
+                output, loss = dis_util.train_step(model, criterion, input,
+                                                   target, args.scaler, args)
                 # Rubik: Average the loss across microbatches.
-                loss = loss_mb.reduce_mean()
+                loss = loss.reduce_mean()
+
+                print("reduce_mean : {}".format(loss))
             else:
+                #                 print("** not model_parallel")
                 output = model(input)
                 loss = criterion(output, target)
 
@@ -340,64 +401,66 @@ def train(local_rank, args):
                 dis_util.apex_loss(loss, optimizer)
             elif not args.model_parallel:
                 loss.backward()
-            
+
             # if args.model_parallel:
             #     if args.amp:
             #         args.scaler.step(optimizer)
             #         args.scaler.update()
             # else:
-            
+
             optimizer.step()
 
             if args.rank == 0:
-#             if args.rank == 0 and batch_idx % args.log_interval == 1:
+                #             if args.rank == 0 and batch_idx % args.log_interval == 1:
                 # Every print_freq iterations, check the loss, accuracy, and speed.
                 # For best performance, it doesn't make sense to print these metrics every
                 # iteration, since they incur an allreduce and some host<->device syncs.
 
-                # Measure accuracy
-                print("output : {}".format(output.__dict__))
-                prec1, prec5 = util.accuracy(output.data, target, topk=(1, 5))
-
                 if args.model_parallel:
-                    loss = loss.item()
-                else:
-                    loss = loss.data
-                # Average loss and accuracy across processes for logging
-                if args.multigpus_distributed:
-                    reduced_loss = dis_util.reduce_tensor(
-                        loss, args)
-                    prec1 = dis_util.reduce_tensor(prec1, args)
-                    prec5 = dis_util.reduce_tensor(prec5, args)
-                else:
-                    reduced_loss = loss
+                    output = torch.cat(output.outputs)
+
+                # Measure accuracy
+                prec1, prec5 = util.accuracy(output, target, topk=(1, 5))
 
                 # to_python_float incurs a host<->device sync
-                losses.update(util.to_python_float(
-                    reduced_loss), input.size(0))
+                losses.update(util.to_python_float(loss), input.size(0))
                 top1.update(util.to_python_float(prec1), input.size(0))
                 top5.update(util.to_python_float(prec5), input.size(0))
 
                 # Waiting until finishing operations on GPU (Pytorch default: async)
                 torch.cuda.synchronize()
-                batch_time.update((time.time() - end)/args.log_interval)
+                batch_time.update((time.time() - end) / args.log_interval)
                 end = time.time()
-                
 
-#                 if args.rank == 0:
+                #                 if args.rank == 0:
                 print('Epoch: [{0}][{1}/{2}]  '
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
                       'Speed {3:.3f} ({4:.3f})  '
                       'Loss {loss.val:.10f} ({loss.avg:.4f})  '
                       'Prec@1 {top1.val:.3f} ({top1.avg:.3f})  '
                       'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                          epoch, batch_idx, len(train_loader),
-                          args.world_size*args.batch_size/batch_time.val,
-                          args.world_size*args.batch_size/batch_time.avg,
+                          epoch,
+                          batch_idx,
+                          len(train_loader),
+                          args.world_size * args.batch_size / batch_time.val,
+                          args.world_size * args.batch_size / batch_time.avg,
                           batch_time=batch_time,
-                          loss=losses, top1=top1, top5=top5))
-    
+                          loss=losses,
+                          top1=top1,
+                          top5=top5))
+
+        acc1 = validate(test_loader, model, criterion, epoch, model_history,
+                        args)
+
+        is_best = False
+
         if args.rank == 0:
+            is_best = acc1 > best_acc1
+            best_acc1 = max(acc1, best_acc1)
+
+        if not args.multigpus_distributed or (args.multigpus_distributed
+                                              and not args.model_parallel
+                                              and args.rank == 0):
             model_history['epoch'].append(epoch)
             model_history['batch_idx'].append(batch_idx)
             model_history['batch_time'].append(batch_time.val)
@@ -405,29 +468,24 @@ def train(local_rank, args):
             model_history['top1'].append(top1.val)
             model_history['top5'].append(top5.val)
 
-
-            acc1 = validate(test_loader, model, criterion,
-                            epoch, model_history, args)
-
-
-            is_best = acc1 > best_acc1
-            best_acc1 = max(acc1, best_acc1)
-
-        if not args.multigpus_distributed or (args.multigpus_distributed and args.rank == 0):
-            util.save_history(os.path.join(args.output_data_dir,
-                                           'model_history.p'), model_history)
-
-            if args.model_parallel:
-                dist_util.smp_savemodel(model, optimizer, args)
-            else:
-                util.save_model({
+            util.save_history(
+                os.path.join(args.output_data_dir, 'model_history.p'),
+                model_history)
+            util.save_model(
+                {
                     'epoch': epoch + 1,
                     'model_name': args.model_name,
                     'state_dict': model.state_dict(),
                     'best_acc1': best_acc1,
                     'optimizer': optimizer.state_dict(),
                     'class_to_idx': train_loader.dataset.class_to_idx,
-                }, is_best, args.model_dir)
+                }, is_best, args)
+        elif args.model_parallel:
+            if args.rank == 0:
+                util.save_history(
+                    os.path.join(args.output_data_dir, 'model_history.p'),
+                    model_history)
+            dis_util.smp_savemodel(model, optimizer, is_best, args)
 
 
 def validate(val_loader, model, criterion, epoch, model_history, args):
@@ -435,51 +493,47 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
     losses = util.AverageMeter('Loss', ':.4e')
     top1 = util.AverageMeter('Acc@1', ':6.2f')
     top5 = util.AverageMeter('Acc@5', ':6.2f')
-    progress = util.ProgressMeter(
-        len(val_loader),
-        [batch_time, losses, top1, top5],
-        prefix='Test: ')
+    progress = util.ProgressMeter(len(val_loader),
+                                  [batch_time, losses, top1, top5],
+                                  prefix='Test: ')
 
     # switch to evaluate mode
     model.eval()
     end = time.time()
 
-
+    print("**** validate *****")
+    test_losses = []
     for batch_idx, (input, target) in enumerate((val_loader)):
-        #         input = input.cuda()
-        #         target = target.cuda()
         input = input.to(args.device)
         target = target.to(args.device)
+
         batch_idx += 1
-        
         # compute output
         with torch.no_grad():
             if args.model_parallel:
-                output, loss = dis_util.test_step(
-                    model, criterion, input, target)
+                output, loss = dis_util.test_step(model, criterion, input,
+                                                  target)
+                loss = loss.reduce_mean()
+                test_losses.append(loss)
             else:
                 output = model(input)
                 loss = criterion(output, target)
 
         # measure accuracy and record loss
-        prec1, prec5 = util.accuracy(output.data, target, topk=(1, 5))
+        if args.model_parallel:
+            output = torch.cat(output.outputs)
 
-        if args.multigpus_distributed:
-            reduced_loss = dis_util.reduce_tensor(loss.data, args)
-            prec1 = dis_util.reduce_tensor(prec1, args)
-            prec5 = dis_util.reduce_tensor(prec5, args)
-        else:
-            reduced_loss = loss.data
+        prec1, prec5 = util.accuracy(output, target, topk=(1, 5))
 
-        losses.update(util.to_python_float(reduced_loss), input.size(0))
+        losses.update(util.to_python_float(loss), input.size(0))
         top1.update(util.to_python_float(prec1), input.size(0))
         top5.update(util.to_python_float(prec5), input.size(0))
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        
-#         print("Validation args.rank : {}".format(args.rank))
+
+        #         print("Validation args.rank : {}".format(args.rank))
         # TODO:  Change timings to mirror train().
         if args.rank == 0:
             print('Test: [{0}/{1}]  '
@@ -488,11 +542,14 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
                   'Loss {loss.val:.4f} ({loss.avg:.4f})  '
                   'Prec@1 {top1.val:.3f} ({top1.avg:.3f})  '
                   'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                      batch_idx, len(val_loader),
+                      batch_idx,
+                      len(val_loader),
                       args.world_size * args.batch_size / batch_time.val,
                       args.world_size * args.batch_size / batch_time.avg,
-                      batch_time=batch_time, loss=losses,
-                      top1=top1, top5=top5))
+                      batch_time=batch_time,
+                      loss=losses,
+                      top1=top1,
+                      top5=top5))
             model_history['val_epoch'].append(epoch)
             model_history['val_batch_idx'].append(batch_idx)
             model_history['val_batch_time'].append(batch_time.val)
@@ -500,13 +557,14 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
             model_history['val_top1'].append(top1.val)
             model_history['val_top5'].append(top5.val)
 
-    print('  Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-          .format(top1=top1, top5=top5))
+    print('  Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'.format(top1=top1,
+                                                                 top5=top5))
     model_history['val_avg_epoch'].append(epoch)
     model_history['val_avg_batch_time'].append(batch_time.avg)
     model_history['val_avg_losses'].append(losses.avg)
     model_history['val_avg_top1'].append(top1.avg)
     model_history['val_avg_top5'].append(top5.avg)
+
     if args.assert_losses:
         dist_util.smp_lossgather(losses.avg, args)
     return top1.avg
@@ -515,17 +573,25 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
 def main():
     print("start main function")
     args = args_fn()
-    print("args.data_parallel : {} , args.model_parallel : {}, args.apex : {} , args.num_gpus : {}, args.num_classes".format(
-        args.data_parallel, args.model_parallel, args.apex, args.num_gpus, args.num_classes))
-    
+    print(
+        "args.data_parallel : {} , args.model_parallel : {}, args.apex : {} , args.num_gpus : {}, args.num_classes"
+        .format(args.data_parallel, args.model_parallel, args.apex,
+                args.num_gpus, args.num_classes))
+
     args.use_cuda = int(args.num_gpus) > 0
-    
-    args.kwargs = {'num_workers': 8,
-                   'pin_memory': True} if args.use_cuda else {}
+
+    args.kwargs = {
+        'num_workers': 16,
+        'pin_memory': True
+    } if args.use_cuda else {}
     args.device = torch.device("cuda" if args.use_cuda else "cpu")
     args = dis_util.dist_init(train, args)
-#     train(args)
 
+
+#     sys.exit(0)
+#     train(args)
 
 if __name__ == '__main__':
     main()
+    dis_util.barrier()
+    sys.exit(0)
