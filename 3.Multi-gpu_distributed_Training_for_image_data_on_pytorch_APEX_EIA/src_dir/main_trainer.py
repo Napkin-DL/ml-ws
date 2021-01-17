@@ -168,9 +168,6 @@ def args_fn():
                         help='Only run 10 iterations for profiling.')
 
     # Setting for Model Parallel
-    #     parser.add_argument("--num-microbatches", type=int, default=4)
-    #     parser.add_argument("--num-batches", type=int, default=0)
-    #     parser.add_argument("--num-partitions", type=int, default=2)
     parser.add_argument("--horovod", type=int, default=0)
     parser.add_argument('--mp_parameters', type=str, default='')
     parser.add_argument("--ddp", type=int, default=0)
@@ -310,12 +307,14 @@ def train(local_rank, args):
     model_history = util.init_modelhistory(model_history)
     train_start = time.time()
 
+    if local_rank is not None:
+        args.local_rank = local_rank
+        
     # distributed_setting
     if args.multigpus_distributed:
         args = dis_util.dist_setting(args)
 
-    if local_rank is not None:
-        args.local_rank = local_rank
+
 
     # choose model from pytorch model_zoo
     model = util.torch_model(
@@ -379,8 +378,6 @@ def train(local_rank, args):
             target = target.to(args.device)
             batch_idx += 1
 
-            #             util.adjust_learning_rate(optimizer, epoch, batch_idx, len(train_loader), args)
-
             if args.model_parallel:
                 print("** smp_train_step **")
                 output, loss = dis_util.train_step(model, criterion, input,
@@ -401,12 +398,6 @@ def train(local_rank, args):
                 dis_util.apex_loss(loss, optimizer)
             elif not args.model_parallel:
                 loss.backward()
-
-            # if args.model_parallel:
-            #     if args.amp:
-            #         args.scaler.step(optimizer)
-            #         args.scaler.update()
-            # else:
 
             optimizer.step()
 
@@ -433,12 +424,12 @@ def train(local_rank, args):
                 end = time.time()
 
                 #                 if args.rank == 0:
-                print('Epoch: [{0}][{1}/{2}]  '
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
-                      'Speed {3:.3f} ({4:.3f})  '
-                      'Loss {loss.val:.10f} ({loss.avg:.4f})  '
-                      'Prec@1 {top1.val:.3f} ({top1.avg:.3f})  '
-                      'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                print('Epoch: [{0}][{1}/{2}] '
+                      'Train_Time={batch_time.val:.3f}: avg-{batch_time.avg:.3f}, '
+                      'Train_Speed={3:.3f} ({4:.3f}), '
+                      'Train_Loss={loss.val:.10f}:({loss.avg:.4f}), '
+                      'Train_Prec@1={top1.val:.3f}:({top1.avg:.3f}), '
+                      'Train_Prec@5={top5.val:.3f}:({top5.avg:.3f})'.format(
                           epoch,
                           batch_idx,
                           len(train_loader),
@@ -501,7 +492,7 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
     model.eval()
     end = time.time()
 
-    print("**** validate *****")
+#     print("**** validate *****")
     test_losses = []
     for batch_idx, (input, target) in enumerate((val_loader)):
         input = input.to(args.device)
@@ -537,11 +528,11 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
         # TODO:  Change timings to mirror train().
         if args.rank == 0:
             print('Test: [{0}/{1}]  '
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
-                  'Speed {2:.3f} ({3:.3f})  '
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})  '
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})  '
-                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+                  'Test_Time={batch_time.val:.3f}:({batch_time.avg:.3f}), '
+                  'Test_Speed={2:.3f}:({3:.3f}), '
+                  'Test_Loss={loss.val:.4f}:({loss.avg:.4f}), '
+                  'Test_Prec@1={top1.val:.3f}:({top1.avg:.3f}), '
+                  'Test_Prec@5={top5.val:.3f}:({top5.avg:.3f})'.format(
                       batch_idx,
                       len(val_loader),
                       args.world_size * args.batch_size / batch_time.val,
@@ -557,7 +548,7 @@ def validate(val_loader, model, criterion, epoch, model_history, args):
             model_history['val_top1'].append(top1.val)
             model_history['val_top5'].append(top5.val)
 
-    print('  Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'.format(top1=top1,
+    print('Prec@1={top1.avg:.3f}, Prec@5={top5.avg:.3f}'.format(top1=top1,
                                                                  top5=top5))
     model_history['val_avg_epoch'].append(epoch)
     model_history['val_avg_batch_time'].append(batch_time.avg)
@@ -588,10 +579,5 @@ def main():
     args = dis_util.dist_init(train, args)
 
 
-#     sys.exit(0)
-#     train(args)
-
 if __name__ == '__main__':
     main()
-    dis_util.barrier()
-    sys.exit(0)

@@ -75,12 +75,6 @@ def dist_init(fn, args):
     #     print("######### Start Training #########")
 
     if args.multigpus_distributed:
-        #         print("channels_last : {}".format(args.channels_last))
-        #         if args.channels_last:
-        #             args.memory_format = torch.channels_last
-        #         else:
-        #             args.memory_format = torch.contiguous_format
-
         if args.apex:
             # Initialize the distributed environment.
             mp.spawn(fn, nprocs=args.num_gpus, args=(args, ))
@@ -258,8 +252,6 @@ def smp_savemodel(model, optimizer, is_best, args):
             print("-INFO- PATH DO NOT EXIST")
     smp.barrier()
 
-    print("******** args.dp_rank : {}".format(args.dp_rank))
-    print("******** args.save_full_model : {}".format(args.save_full_model))
 
     if args.dp_rank == 0:
         if args.save_full_model:
