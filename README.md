@@ -105,6 +105,8 @@ S3로 업로드한 Parquet 데이터셋은 AWS 서비스에서 바로 데이터�
 
 ### 3. Dataset 설명
 Oxford-IIIT Pet Dataset은 37개 다른 종의 개와 고양이 이미지를 각각 200장 씩 제공하고 있으며, Ground Truth 또한 Classification, Object Detection, Segmentation와 관련된 모든 정보가 있으나, 이번 학습에서는 37개 class에 대해 일부 이미지로 Classification 문제를 해결하기 위해 학습을 진행할 예정입니다.
+
+
 ![fig3.jpg](figs/images_4/fig3.jpg)
 
 
