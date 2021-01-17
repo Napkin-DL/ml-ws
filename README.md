@@ -44,13 +44,12 @@ SageMaker의 Built-in Algorithm으로 학습하는 방법과 모델 학습 코�
 
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
-{{% notice note %}}
 **Amazon Simple Storage Service (Amazon S3)** : 확장성과 데이터 가용성 및 우수한 보안, 성능을 제공하는 object storage  \
 **Amazon Athena** : S3 데이터를 interactive한 표준 SQL 쿼리가 가능한 서비스  \
 **AWS Data Wrangler** : 다양한 AWS 서비스의 데이터에 접근하여 Pandas로 변환이 가능한 Open Source Python Package  \
 **Amazon SageMaker AutoPilot** : 데이터에 기반해 분류 또는 회귀를 위해 최상의 machine learning 모델을 자동으로 학습 및 튜닝하는 whitebox 형태의 AutoML  \
 **Amazon Comprehend** : machine learning을 통해 비정형 데이터에서 NLP를 이용하여 Keyphrase Extraction, Sentiment Analysis, Entity Recognition, Topic Modeling, and Language Detection 등의 결과를 얻을 수 있는 서비스  \
-{{% /notice %}}
+
 
 ### 3. Dataset 설명
 
@@ -77,12 +76,11 @@ S3로 업로드한 Parquet 데이터셋은 AWS 서비스에서 바로 데이터�
 
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
-{{% notice note %}}
+
 **Amazon SageMaker Processing** : Amazon SageMaker에서 사전 처리, 사후 처리 및 모델 평가 워크로드를 쉽게 실행할 수 있게 해주는 Python SDK  \
 **Amazon SageMaker Experiments** : 반복적인 Machine Learning 모델 버전을 구성, 추적, 비교 및 평가하는 데 필요한 로깅 및 분석 API가 포함된 Python SDK  \
 **Amazon SageMaker Debugger** : 훈련 중 관련 데이터를 자동추출하여 데이터를 저장 한 다음 분석하여 머신 러닝 모델을 훈련하는 동안 선언한 규칙에 대해 이상 탐지하는 Python SDK  \
 **Amazon SageMaker Endpoint** : 자체 학습한 모델을 inference 하기 위해 API를 생성하는 Amazon SageMaker 호스팅 서비스  \
-{{% /notice %}}
 
 
 ### 3. 실습 수행 과정
@@ -100,10 +98,10 @@ S3로 업로드한 Parquet 데이터셋은 AWS 서비스에서 바로 데이터�
 
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
-{{% notice note %}}
+
 **Amazon SageMaker** : Machine Learning 모델을 빠르게 구축, 훈련 및 배포할 수 있도록 하는 완전 관리형 서비스  \
 **Amazon Elastic Inference** : GPU 인스턴스를 사용하는 것보다 훨씬 적은 비용으로 호스팅된 엔드포인트에 추론 가속을 추가할 수 네트워크 연결 가속기  \
-{{% /notice %}}
+
 
 ### 3. Dataset 설명
 Oxford-IIIT Pet Dataset은 37개 다른 종의 개와 고양이 이미지를 각각 200장 씩 제공하고 있으며, Ground Truth 또한 Classification, Object Detection, Segmentation와 관련된 모든 정보가 있으나, 이번 학습에서는 37개 class에 대해 일부 이미지로 Classification 문제를 해결하기 위해 학습을 진행할 예정입니다.
@@ -113,8 +111,8 @@ Oxford-IIIT Pet Dataset은 37개 다른 종의 개와 고양이 이미지를 각
 ### 4. 실습 수행 과정
 ![fig2.png](figs/images_4/fig2.png)
 
-이번 실습은 SageMaker의 training job을 여러 개 띄워서 분산 학습이 가능하도록 구성하였습니다. 또한, GPU를 여러 개 가지고 있는 8xlarge, 16xlarge를 함께 사용할 때에는 모든 GPU가 Training에서 활용될 수 있도록 구성하였습니다. AWS에서 Distributed multi-gpu training은 기본적으로 [Horovod](https://distributed-training-workshop.go-aws.com/)를 사용합니다. 이번에는 Pytorch에서 활용할 수 있는 [APEX](https://github.com/NVIDIA/apex) (A Pytorch EXtension) 패키지를 이용하여 Multi-gpu distributed training을 수행합니다. APEX 패키지에는 distributed training 기능과 함께 mixed precision training도 할 수 있도록 지원하고 있습니다. 
-![fig4.png](figs/images_4/fig4.png)
+이번 실습은 SageMaker의 training job을 여러 개 띄워서 분산 학습이 가능하도록 구성하였습니다. 또한, GPU를 여러 개 가지고 있는 ml.p3.8xlarge, ml.p3.16xlarge, ml.p3dn.24xlarge, ml.p4dn.24xlarge를 함께 사용할 때에는 모든 GPU가 Training에서 활용될 수 있도록 구성하였습니다. [SageMaker Distributed training](https://docs.aws.amazon.com/ko_kr/sagemaker/latest/dg/distributed-training.html)은 [Data Parallel](https://docs.aws.amazon.com/ko_kr/sagemaker/latest/dg/data-parallel-intro.html)과 [Model Parallel](https://docs.aws.amazon.com/ko_kr/sagemaker/latest/dg/model-parallel.html) 2가지 방법을 지원하며, 기존 Distributed Training 보다 AWS의 인프라에 적합하게 구성하였기에 성능 또한 우수합니다. [Horovod](https://distributed-training-workshop.go-aws.com/)와 [APEX](https://github.com/NVIDIA/apex) (A Pytorch EXtension) 패키지와 같은 기존의 Distributed training도 수행이 가능합니다. 이번 실습에서는 SageMaker Data Parallel과 APEX 패키지를 모두 실행할 수 있도록 distributed training 환경을 구성하였으며, 실습을 통해 2개의 성능과 속도 등을 비교해 보도록 하겠습니다. 
+
 Training이 완료된 이후에는 학습된 model을 SageMaker Endpoint를 이용하여 deploy를 할 예정입니다. 이 때 GPU 대신 가격이 저렴한 CPU로 deploy를 하게 되면 Amazon Elastic Inference를 이용하여 inference 속도를 CPU보다는 더욱 빠르게 수행할 수 있도록 합니다.
 
 이제 앞에서 생성한 SageMaker Notebook으로 가서 SageMaker-HOL 디렉토리를 클릭한 다음, ```3.Multi-gpu_distributed_Training_for_image_data_on_pytorch_APEX_EIA``` 을 수행하시기 바랍니다.
