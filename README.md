@@ -44,11 +44,11 @@ SageMaker의 Built-in Algorithm으로 학습하는 방법과 모델 학습 코�
 
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
-**Amazon Simple Storage Service (Amazon S3)** : 확장성과 데이터 가용성 및 우수한 보안, 성능을 제공하는 object storage  \
-**Amazon Athena** : S3 데이터를 interactive한 표준 SQL 쿼리가 가능한 서비스  \
-**AWS Data Wrangler** : 다양한 AWS 서비스의 데이터에 접근하여 Pandas로 변환이 가능한 Open Source Python Package  \
-**Amazon SageMaker AutoPilot** : 데이터에 기반해 분류 또는 회귀를 위해 최상의 machine learning 모델을 자동으로 학습 및 튜닝하는 whitebox 형태의 AutoML  \
-**Amazon Comprehend** : machine learning을 통해 비정형 데이터에서 NLP를 이용하여 Keyphrase Extraction, Sentiment Analysis, Entity Recognition, Topic Modeling, and Language Detection 등의 결과를 얻을 수 있는 서비스  \
+**Amazon Simple Storage Service (Amazon S3)** : 확장성과 데이터 가용성 및 우수한 보안, 성능을 제공하는 object storage  
+**Amazon Athena** : S3 데이터를 interactive한 표준 SQL 쿼리가 가능한 서비스  
+**AWS Data Wrangler** : 다양한 AWS 서비스의 데이터에 접근하여 Pandas로 변환이 가능한 Open Source Python Package  
+**Amazon SageMaker AutoPilot** : 데이터에 기반해 분류 또는 회귀를 위해 최상의 machine learning 모델을 자동으로 학습 및 튜닝하는 whitebox 형태의 AutoML  
+**Amazon Comprehend** : machine learning을 통해 비정형 데이터에서 NLP를 이용하여 Keyphrase Extraction, Sentiment Analysis, Entity Recognition, Topic Modeling, and Language Detection 등의 결과를 얻을 수 있는 서비스  
 
 
 ### 3. Dataset 설명
@@ -77,10 +77,10 @@ S3로 업로드한 Parquet 데이터셋은 AWS 서비스에서 바로 데이터�
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
 
-**Amazon SageMaker Processing** : Amazon SageMaker에서 사전 처리, 사후 처리 및 모델 평가 워크로드를 쉽게 실행할 수 있게 해주는 Python SDK  \
-**Amazon SageMaker Experiments** : 반복적인 Machine Learning 모델 버전을 구성, 추적, 비교 및 평가하는 데 필요한 로깅 및 분석 API가 포함된 Python SDK  \
-**Amazon SageMaker Debugger** : 훈련 중 관련 데이터를 자동추출하여 데이터를 저장 한 다음 분석하여 머신 러닝 모델을 훈련하는 동안 선언한 규칙에 대해 이상 탐지하는 Python SDK  \
-**Amazon SageMaker Endpoint** : 자체 학습한 모델을 inference 하기 위해 API를 생성하는 Amazon SageMaker 호스팅 서비스  \
+**Amazon SageMaker Processing** : Amazon SageMaker에서 사전 처리, 사후 처리 및 모델 평가 워크로드를 쉽게 실행할 수 있게 해주는 Python SDK  
+**Amazon SageMaker Experiments** : 반복적인 Machine Learning 모델 버전을 구성, 추적, 비교 및 평가하는 데 필요한 로깅 및 분석 API가 포함된 Python SDK  
+**Amazon SageMaker Debugger** : 훈련 중 관련 데이터를 자동추출하여 데이터를 저장 한 다음 분석하여 머신 러닝 모델을 훈련하는 동안 선언한 규칙에 대해 이상 탐지하는 Python SDK  
+**Amazon SageMaker Endpoint** : 자체 학습한 모델을 inference 하기 위해 API를 생성하는 Amazon SageMaker 호스팅 서비스  
 
 
 ### 3. 실습 수행 과정
@@ -99,8 +99,8 @@ S3로 업로드한 Parquet 데이터셋은 AWS 서비스에서 바로 데이터�
 ### 2. 실습 시 사용되는 AWS 서비스 이해
 
 
-**Amazon SageMaker** : Machine Learning 모델을 빠르게 구축, 훈련 및 배포할 수 있도록 하는 완전 관리형 서비스  \
-**Amazon Elastic Inference** : GPU 인스턴스를 사용하는 것보다 훨씬 적은 비용으로 호스팅된 엔드포인트에 추론 가속을 추가할 수 네트워크 연결 가속기  \
+**Amazon SageMaker** : Machine Learning 모델을 빠르게 구축, 훈련 및 배포할 수 있도록 하는 완전 관리형 서비스  
+**Amazon Elastic Inference** : GPU 인스턴스를 사용하는 것보다 훨씬 적은 비용으로 호스팅된 엔드포인트에 추론 가속을 추가할 수 네트워크 연결 가속기  
 
 
 ### 3. Dataset 설명
