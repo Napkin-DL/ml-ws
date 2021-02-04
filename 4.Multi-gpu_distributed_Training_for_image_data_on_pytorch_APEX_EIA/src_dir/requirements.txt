@@ -1,4 +1,0 @@
-albumentations
-pyarrow
-torchnet
-webdataset
