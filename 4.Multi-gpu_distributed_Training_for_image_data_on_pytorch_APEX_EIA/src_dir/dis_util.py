@@ -141,8 +141,8 @@ def dist_setting(args):
 
     args.lr = args.lr * float(args.world_size)
 
-    args.batch_size //= args.world_size // args.num_gpus
-    args.batch_size = max(args.batch_size, 1)
+#     args.batch_size //= args.world_size // args.num_gpus
+#     args.batch_size = max(args.batch_size, 1)
 
     return args
 
